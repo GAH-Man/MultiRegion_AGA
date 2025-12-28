@@ -1,0 +1,803 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description:  Builds the AWS security groups for the Shibboleth IdP.
+                Using the value of the Environment parameter (DEV, QA, or PROD) will build the appropriate environment.
+  
+Parameters:
+    AppName: 
+        Description: The application name.
+        Type: String
+        Default: WebMgmtShibIdP
+        AllowedValues:
+            - WebMgmtShibIdP
+
+    Environment:
+        Description: Determines which environment and resources will be built.
+        Type: String
+        Default: DEV
+        AllowedValues:
+            - QA
+            - DEV
+            - PROD
+        ConstraintDescription: Must specify PROD, QA, or DEV.
+
+    DummyCIDR:
+        Type: String
+        Default: '192.168.5.5/24'
+        Description: Dummy CIDR.
+
+    DummyPort:
+        Type: Number
+        Default: 2051
+        Description: Dummy port.
+
+    EFSPort:
+        Type: Number
+        Default: 2049
+        Description: EFS port.
+
+    EphemeralPortStart:
+        Type: Number
+        Default: 1024
+        Description: Ephemeral port start.
+
+    EphemeralPortEnd:
+        Type: Number
+        Default: 65535
+        Description: Ephemeral port end.
+
+    HTTPCIDR:
+        Type: String
+        Default: '0.0.0.0/0'
+        Description: CIDR for HTTP access.
+
+    HTTPSCIDR:
+        Type: String
+        Default: '0.0.0.0/0'
+        Description: CIDR for HTTPS access.
+
+    HTTPPort:
+        Type: Number
+        Default: 80
+        Description: Port for HTTP access.
+
+    HTTPSPort:
+        Type: Number
+        Default: 443
+        Description: Port for HTTPS access.
+
+    MemcachePort:
+        Type: Number
+        Default: 11211
+        Description: Port for memcache access.
+
+    MySQLCIDR:
+        Type: String
+        Default: '0.0.0.0/0'
+        Description: CIDR for SSH access.
+
+    MySQLPort:
+        Type: Number
+        Default: 3306
+        Description: Port for MySQL access.
+
+    OraclePort:
+        Type: Number
+        Default: 1521
+        Description: Port for Oracle access.
+
+    Region:
+        Description: Region- Change to VA or OH.
+        Default: 'VA'
+        Type: String
+        AllowedValues:
+            - 'VA'
+            - 'OH'
+        ConstraintDescription: AWS Region - Change to VA or OH.
+
+    SSHCIDR:
+        Type: String
+        Default: '0.0.0.0/0'
+        Description: CIDR for SSH access.
+
+    SSHPort:
+        Type: Number
+        Default: 22
+        Description: Port for SSH access.
+
+    ShibbolethIdPPort:
+        Type: Number
+        Default: 80
+        Description: Port for ShibbolethIdP access.
+
+    WWWCIDR:
+        Type: String
+        Default: '0.0.0.0/0'
+        Description: access from www.
+
+    SPEEDTYPE:
+        Type: String
+        Default: "1233430000"
+        Description: Emory SpeedType.
+
+    SupportContactEmail:
+        Type: String
+        Default: 'webgroup@emory.edu'
+        Description: Support contact email.
+
+    SupportGroup:
+        Type: String
+        Default: 'Emory University WebManagement'
+        Description: Support Group for this service.
+
+#######################################################################################################
+################  Mappings and Conditions  ############################################################
+#######################################################################################################
+Conditions:
+    #  Conditionally determines which Environment (PROD, QA, DEV or TEST) to build.
+    #  true based on value of AASetEnvironment (ie, if AASetEnvironment is PROD, CreateProdResources).
+    CreateProdResources: !Equals [ !Ref Environment, PROD ]
+    CreateQaResources: !Equals [ !Ref Environment, QA ]
+    CreateDevResources: !Equals [ !Ref Environment, DEV ]
+
+    CreateVAResources: !Equals [ !Ref Region, 'VA' ]
+    CreateOHResources: !Equals [ !Ref Region, 'OH']
+
+
+Mappings:
+    ##### REM: Parameter names must be same in all 3 Environment Maps.
+    ##### REM:  Only SGx security groups in QA and PROD Environments.
+    ##### REM:  Only need VPCIDVA and VPCIDOH.
+    Environments:
+        #################################################
+        #####  PROD Environment/AWS Account
+        #################################################
+        PROD:
+            EnvironmentLower: prod
+            AppNameLower: webmgmtshibidp
+            ShibbolethIdPAMIId: ami-XXXXX
+            ### VPC and CIDRS
+            VPCIDVA: vpc-xxxxx
+            VPVIDOH: vpc-xxxxx
+            VPCCIDRVA: 10.60.XX.XX/XX
+            VPCCIDROH: 10.60.XX.XX/XX
+            ### Availability Zones
+            AZ1VA:  us-east-1a
+            AZ2VA:  us-east-1b
+            AZ1OH:  us-east-2a
+            AZ2OH:  us-east-2b
+            ### Subnets
+            ###  Public Tier
+            PublicSubnet1: subnet-xxxxx   ###  Public1 Tier AZ-a
+            PublicSubnet2: subnet-xxxxx  ###  Public2 Tier AZ-b
+            ###  Application Tier
+            PrivateSubnet1: subnet-xxxxx   ###  Application Tier AZ-a
+            PrivateSubnet2: subnet-xxxxx   ###  Application Tier AZ-b
+            #####  PROD SecurityGroups
+            ### APP
+            APPSGxID: WebMgmtShibIdPPROD-APP-SGx
+            APPSGxIDID: xxxxx
+            ### ALB
+            ALBSGx: WebMgmtShibIdPPROD-ALB-SGx
+            ALBSGxID: XXXXX
+            ### DB
+            DBSGx: WebMgmtShibIdPPROD-DB-SGx
+            DBSGxID:   xxxxx
+            ### EFS
+            EFSSGx: WebMgmtShibIdPPROD-EFS-SGx
+            EFSSGxID:  xxxxx
+            ### Memcache
+            MEMCACHESG:  WebMgmtShibIdPPROD-Memcache-SG
+            MEMCACHESGID:  xxxxx
+            MEMCACHESGx:  WebMgmtShibIdPPROD-Memcache-SGx
+            MEMCACHESGxID:  xxxxx
+            ### StandardBase
+            STDBASESGx:  STANDARD-BASE-SGx
+            STDBASESGxID:  xxxxx
+            ### SNSEmail
+            SNSEmail: webgroup@emory.edu
+            ##### KMS Keys
+            ### EBS
+            EBSKEYALIAS: alias/WebMgmtShibIdProd-EBS-Key
+            EBSKEYARN:  arn:aws:kms:us-east-1:XXXXXXXXX
+            EBSKEYID: XXXXXXXXX
+            ### EFS
+            EFSKEYALIAS: alias/WebMgmtShibIdPProd-EFS-Key
+            EFSKEYARN:  arn:aws:kms:us-east-1:XXXXX
+            EFSKEYID:  XXXXX  
+            ### S3
+            S3KEYALIAS: alias/WebMgmtShibIdPProd-S3-Key
+            S3KEYARN:  arn:aws:kms:us-east-1:XXXXXXX
+            S3KEYID:  XXXXXX
+            ### OTHER
+            OTHERKEYALIAS: alias/WebMgmtShibIdProd-Other-Key
+            OTHERKEYARN:  arn:aws:kms:us-east-1:XXXX:XXXXX
+            OTHERKEYID:  XXXXX
+            ### Certs
+            EmoryWildCardCertArn: xxxxxx
+            LoginEmoryEduCertArn: xxxxxx
+            ### Instance Type
+            EC2InstanceType: t2.large
+            ### IAM Instance Profile
+            EC2InstanceProfile: WebMgmtShibIdP-Prod-EC2Role
+            ### IAM Roles
+            AutoScalingRole:  AWSServiceRoleForAutoScaling_WebMgmtShibIdPProd
+            AutoScalingRoleArn: arn:aws:iam::XXXXXX:role/aws-service-role/autoscaling.amazonaws.com/AWSServiceRoleForAutoScaling_WebMgmtShibIdPProd
+            CloudWatchAgentRole: WebMgmtShibIdPProdEC2CloudWatchAgentRole
+            CloudWatchAgentRoleArn: arn:aws:iam::XXXXX:role/WebMgmtShibIdPProdEC2CloudWatchAgentRole
+            EC2InstanceProfile: WebMgmtShibIdP-Prod-EC2Role
+            ### AMI IDs
+            DEVAMIID: ami-xxxxx
+            QAAMIID: ami-xxxxx
+            PRODAMIID: ami-xxxxx
+            ### ASG min, Max, Desired
+            ### PROD DEV ASG
+            DEVASGMin: 1
+            DEVASGMax: 1
+            DEVASGDesired: 1
+            ### PROD QA ASG
+            QAASGMin: 1
+            QAASGMax: 1
+            QAASGDesired: 1
+            ### PROD PROD ASG
+            PRODASGMin: 2
+            PRODASGMax: 4
+            PRODASGDesired: 2  
+            ### Memcache
+            CacheNodeType: cache.t2.medium
+
+        #################################################
+        #####  QA Environment/AWS Account
+        #################################################
+        QA:
+            EnvironmentLower: qa
+            AppNameLower: webmgmtshibidp
+            ShibbolethIdPAMIId: ami-XXXXX
+            ### VPC and CIDRS
+            VPCIDVA: vpc-01045ad051990cf28
+            VPVIDOH: vpc-xxxxx
+            VPCCIDRVA: 10.60.62.192/26
+            VPVCIDROH: xx.xx.xx.xxx/26
+            ### Availability Zones
+            AZ1VA:  us-east-1a
+            AZ2OH:  us-east-1b
+            AZ1OH:  us-east-2a
+            AZ2OH:  us-east-2b
+            ### Subnets
+            ###  Public Tier
+            PublicSubnet1: subnet-0b7af9501f0941d94   ###  Public1 Tier AZ-a
+            PublicSubnet2: subnet-074d55823c02f71e2   ###  Public2 Tier AZ-b
+            ###  Application Tier
+            PrivateSubnet1: subnet-0349040a0bfcb1cdf   ###  Application Tier AZ-a
+            PrivateSubnet2: subnet-0a8fd7aca662b8b39   ###  Application Tier AZ-b
+            ##### QA  SecurityGroups
+            ### APP
+            APPSGxID: WebMgmtShibIdPQA-APP-SGx
+            APPSGxIDID: sg-0ad2992dc7c2f8cc3
+            ### ALB
+            ALBSGx: WebMgmtShibIdPQA-ALB-SGx
+            ALBSGxID:  sg-0813ee4e8ae261aaa
+            ### DB
+            DBSGx: WebMgmtShibIdPQA-DB-SGx
+            DBSGxID:  xxxxx
+            ### EFS
+            EFSSGx: WebMgmtShibIdPQA-EFS-SGx
+            EFSSGxID:  sg-0a35c2d3181175fcd
+            ###  Memcache
+            MEMCACHESGx:  WebMgmtShibIdPQA-Memcache-SGx
+            MEMCACHESGIDx: sg-0ce662e9ba5142137
+            ### StandardBase
+            STDBASESGx:  STANDARD-BASE-SGx
+            STDBASESGxID:  sg-0e91583231dc28338
+            ### SNSEmail
+            SNSEmail: ghall4@emory.edu
+            ##### KMS Keys
+            ### EBS
+            EBSKEYALIAS: WebMgmtShibIdPQA-EBS-Key
+            EBSKEYARN:  arn:aws:kms:us-east-1:177227696563:key/6d0aa908-d4bb-410c-b2d5-9814a1533b92
+            EBSKEYID: 6d0aa908-d4bb-410c-b2d5-9814a1533b92
+            ### EFS
+            EFSKEYALIAS: alias/WebMgmtShibIdPQA-EFS-Key
+            EFSKEYARN:  arn:aws:kms:us-east-1:177227696563:key/8505efde-447d-4968-9b42-6a0383176f2e
+            EFSKEYID:  8505efde-447d-4968-9b42-6a0383176f2e    
+            ### S3
+            S3KEYALIAS: WebMgmtShibIdPQA-S3-Key
+            S3KEYARN:  arn:aws:kms:us-east-1:177227696563:key/3ced70cf-6a50-4f35-8c32-4e1ab297f919
+            S3KEYID:  3ced70cf-6a50-4f35-8c32-4e1ab297f919
+            ### OTHER
+            OTHERKEYALIAS: alias/WebMgmtShibIdPQA-Other-Key
+            OTHERKEYARN:  arn:aws:kms:us-east-1:177227696563:key/52eac347-4e83-48df-adae-4db90d1a8c40
+            OTHERKEYID:  52eac347-4e83-48df-adae-4db90d1a8c40
+            ### Certs
+            EmoryWildCardCertArn: xxxxxx
+            LoginEmoryEduCertArn: arn:aws:acm:us-east-1:177227696563:certificate/530188d3-9bdc-402e-8e98-b423a21d5593
+            ### Instance Type
+            EC2InstanceType: t2.large
+            ### IAM Instance Profile
+            EC2InstanceProfile: WebMgmtShibIdP-QA-EC2Role
+            ##### IAM Roles
+            ### AutoScaling
+            AutoScalingRole:  AWSServiceRoleForAutoScaling_WebMgmtShibIdPQA
+            AutoScalingRoleArn: arn:aws:iam::177227696563:role/aws-service-role/autoscaling.amazonaws.com/AWSServiceRoleForAutoScaling_WebMgmtShibIdPQA
+            ### CloudWatch
+            CloudWatchAgentRole: WebMgmtShibIdPQAEC2CloudWatchAgentRole
+            CloudWatchAgentRoleArn: arn:aws:iam::177227696563:role/WebMgmtShibIdPQAEC2CloudWatchAgentRole
+            ### AMI IDs
+            DEVAMIID: ami-xxxxx
+            QAAMIID: ami-xxxxx
+            PRODAMIID: ami-xxxxx
+            ##### ASG min, Max, Desired
+            ### QA DEV ASG
+            DEVASGMin: 1
+            DEVASGMax: 1
+            DEVASGDesired: 1
+            ### QA QA ASG
+            QAASGMin: 1
+            QAASGMax: 1
+            QAASGDesired: 1
+            ### QA PROD ASG
+            PRODASGMin: 1
+            PRODASGMax: 1
+            PRODASGDesired: 1       
+            ### Memcache
+            CacheNodeType: cache.t2.medium
+            
+        #################################################
+        #####  DEV Environment/AWS Account
+        #################################################
+        ##### Only DEV has non-SGx security groups
+        DEV:
+            EnvironmentLower: dev
+            AppNameLower: webmgmtshibidp
+            ShibbolethIdPAMIId: ami-XXXXX
+            ### VPC and CIDRS
+            VPCIDVA: vpc-0f3d0afaf831a33ed
+            VPCIDOH: vpc-097c5443c500364ee
+            VPCCIDRVA: 10.60.62.128/26
+            VPCCIDROH: 10.60.149.64/26
+            ### Availability Zones
+            AZ1VA:  us-east-1a
+            AZ2VA:  us-east-1b
+            AZ1OH:  us-east-2a
+            AZ2OH:  us-east-2b
+            ###  Public Tier
+            PublicSubnet1: subnet-07a2df74f22130bea  ###  Public1 Tier AZ-a
+            PublicSubnet2: subnet-0f9d059f502ca94ea  ###  Public2 Tier AZ-b
+            ###  Application Tier
+            PrivateSubnet1: subnet-0c235b2c03e3d36fd  ###  Application Tier AZ-a
+            PrivateSubnet2: subnet-0eceb52dd207798de  ###  Application Tier AZ-b
+            #####  DEV SecurityGroups
+            ### ALB
+            ALBSG: WebMgmtShibIdPDEV-ALB-SG
+            ALBSGID:  sg-03edcb416edb3b8be
+            ALBSGx: WebMgmtShibIdPDEV-ALB-SGx
+            ALBSGxID:  sg-0c3153d89cb8c783b
+            ### APP
+            APPSG: WebMgmtShibIdPDEV-APP-SG
+            APPSGID: sg-0f6400aef17903f26
+            APPSGxID: WebMgmtShibIdPDEV-APP-SGx
+            APPSGxIDID: sg-07f46292a55c2b623
+            ### DB
+            DBSGx: WebMgmtShibIdPDEV-DB-SGx
+            DBSGxID:  sg-0de4915cf8db21936
+            ### EFS
+            EFSSG: WebMgmtShibIdPDEV-EFS-SG
+            EFSSGID:  sg-0ddbb98862afe4a17
+            EFSSGx: WebMgmtShibIdPDEV-EFS-SGx
+            EFSSGxID:  sg-0580a8f13f8189315
+            ### Memcache
+            MEMCACHESG:  WebMgmtShibIdPDEV-Memcache-SG
+            MEMCACHESGID:  sg-04a63d02cdc7c5415
+            MEMCACHESGx:  WebMgmtShibIdPDEV-Memcache-SGx
+            MEMCACHESGIDx:  sg-0db6d2dd39c6937cc
+            ### NLB
+            NLBSG: WebMgmtShibIdPDEV-NLB-SG
+            NLBSGID: sg-04f0dd35253cbaf48
+            ### StandardBase
+            STDBASESGx:  STANDARD-BASE-SGx
+            STDBASESGxID:  sg-03ffde9b5f0e73add
+            ### SNSEmail
+            SNSEmail: ghall4@emory.edu
+            ##### KMS Keys
+            ### EBS
+            EBSKEYALIAS: WebMgmtShibIdPDev-EBS-Key
+            EBSKEYARN:  arn:aws:kms:us-east-1:637667300994:key/41e219cc-cffc-4358-a412-4d8b439e368c
+            EBSKEYID: 41e219cc-cffc-4358-a412-4d8b439e368c
+            ### EFS
+            EFSKEYALIAS: WebMgmtShibIdPDev-EFS-Key
+            EFSKEYID:  d1a14717-ec9a-4398-b3a0-dd298e5c81e9
+            EFSKEYARN:  arn:aws:kms:us-east-1:637667300994:key/d1a14717-ec9a-4398-b3a0-dd298e5c81e9
+            ### S3
+            S3KEYALIAS: WebMgmtShibIdPDev-S3-Key
+            S3KEYARN:  arn:aws:kms:us-east-1:637667300994:key/1a9d053b-d8b4-44f5-a97a-f231d4ecaf37
+            S3KEYID:  1a9d053b-d8b4-44f5-a97a-f231d4ecaf37
+            ### OTHER
+            OTHERKEYALIAS: WebMgmtShibIdPDev-Other-Key
+            OTHERKEYARN:  arn:aws:kms:us-east-1:637667300994:key/5d941c8f-e7fe-4f8f-ad31-01f0933a3584
+            OTHERKEYID:  5d941c8f-e7fe-4f8f-ad31-01f0933a3584
+            ### Certs
+            EmoryWildCardCertArn: arn:aws:acm:us-east-1:637667300994:certificate/a8a395a7-2bba-4eb4-84c6-388a84d20d24
+            LoginEmoryEduCertArn: arn:aws:acm:us-east-1:637667300994:certificate/8e111428-14fb-4939-9d0a-71484a658b77
+            ### Instance Type
+            EC2InstanceType: t2.large
+            ### IAM Instance Profile
+            EC2InstanceProfile: WebMgmtShibIdP-Dev-EC2Role
+            ##### IAM Roles
+            ### AutoScaling
+            AutoScalingRole:  AWSServiceRoleForAutoScaling_WebMgmtShibIdPDev
+            AutoScalingRoleArn: arn:aws:iam::637667300994:role/aws-service-role/autoscaling.amazonaws.com/AWSServiceRoleForAutoScaling_WebMgmtShibIdPDev
+            ### CloudWatch
+            CloudWatchAgentRole: WebMgmtShibIdPDevEC2CloudWatchAgentRole
+            CloudWatchAgentRoleArn: arn:aws:iam::637667300994:role/WebMgmtShibIdPDevEC2CloudWatchAgentRole
+            ### AMI IDs
+            DEVAMIID: ami-0df8177373ea90463
+            QAAMIID: ami-0eead17b2c5f40140
+            PRODAMIID: ami-0ebe295e83c481157
+            ##### ASG min, Max, Desired
+            ### DEV DEV ASG
+            DEVASGMin: 1
+            DEVASGMax: 1
+            DEVASGDesired: 1
+            ### DEV QA ASG
+            QAASGMin: 1
+            QAASGMax: 1
+            QAASGDesired: 1
+            ### DEV PROD ASG
+            PRODASGMin: 1
+            PRODASGMax: 1
+            PRODASGDesired: 1
+            ### Memcache
+            CacheNodeType: cache.t2.small
+
+
+    REGIONS:
+        VA:
+            Region: us-east-1
+            AZ1: us-east-1a
+            AZ2: us-east-1b
+
+        OH:
+            Region: us-east-2
+            AZ1: us-east-2a
+            AZ2: us-east-2b
+
+#################################################################################################
+########   Resources   ##########################################################################
+#################################################################################################
+Resources:
+    ##### Network Load Balancer SG
+    #####  Allow all from from www.
+    NLBSG:
+        Type: AWS::EC2::SecurityGroup
+        DeletionPolicy: 'Delete'
+        Properties:
+            GroupName: !Join ['', [!Ref AppName, !Ref Environment, "-NLB-SG"]]
+            GroupDescription: "Allow all from from www."
+            # !If [condition_name, value_if_true, value_if_false]
+            # !If [CreateVAResources, VPCIDVA, VPCIDOH ]
+            VpcId: !If [CreateVAResources, !FindInMap [Environments, !Ref Environment, VPCIDVA], !FindInMap [Environments, !Ref Environment, VPCIDOH] ]
+            #VpcId:  !FindInMap [Environments, !Ref Environment, VPCID]
+            Tags:
+                - Key: SupportContact
+                  Value: !Sub ${SupportContactEmail}
+                - Key: SupportGroup
+                  Value: !Sub ${SupportGroup}
+                - Key: Name
+                  Value:  !Join ['', [!Ref AppName, !Ref Environment, "-NLB-SG"]]
+                - Key: srd:profile
+                  Value: !Join ['', ['cimp:', !Ref AppName]]
+                - Key: EmorySpeedType1:SpeedTypePercent1
+                  Value: !Join ['', [!Ref SPEEDTYPE, ':100']]  
+                - Key: EmoryApplicationName
+                  Value: !Ref AppName
+                - Key: EmoryApplicationNameType
+                  Value: !Ref AppName
+            #  In traffic
+            SecurityGroupIngress:
+                #  allow all
+                - IpProtocol: tcp
+                  FromPort: 0
+                  ToPort: 65535
+                  CidrIp: !Ref WWWCIDR
+                  Description: "Allow all from www."
+
+    ##### Application Load Balancer SG
+    #####  allow ports 443, 4443, 4444, port 80 from Network Load Balancer SG.
+    ALBSG:
+        Type: AWS::EC2::SecurityGroup
+        DeletionPolicy: 'Delete'
+        Properties:
+            GroupName: !Join ['', [!Ref AppName, !Ref Environment, "-ALB-SG"]]
+            GroupDescription: "Allow ports 80, 443, 4443, and 4444 from the NLBSG."
+            VpcId: !If [CreateVAResources, !FindInMap [Environments, !Ref Environment, VPCIDVA], !FindInMap [Environments, !Ref Environment, VPCIDOH] ]
+            #VpcId: !FindInMap [Environments, !Ref Environment, VPCID]
+            Tags:
+                - Key: SupportContact
+                  Value: !Sub ${SupportContactEmail}
+                - Key: SupportGroup
+                  Value: !Sub ${SupportGroup}
+                - Key: Name
+                  Value:  !Join ['', [!Ref AppName, !Ref Environment, "-ALB-SG"]]
+                - Key: srd:profile
+                  Value: !Join ['', ['cimp:', !Ref AppName]]
+                - Key: EmorySpeedType1:SpeedTypePercent1
+                  Value: !Join ['', [!Ref SPEEDTYPE, ':100']]  
+                - Key: EmoryApplicationName
+                  Value: !Ref AppName
+                - Key: EmoryApplicationNameType
+                  Value: !Ref AppName
+            #  In traffic
+            SecurityGroupIngress:
+                # http 80
+                - IpProtocol: tcp
+                  FromPort: !Ref HTTPPort
+                  ToPort: !Ref HTTPPort
+                  SourceSecurityGroupId: !GetAtt NLBSG.GroupId
+                  Description: "Allow http from the NLBSG."
+                # https 443
+                - IpProtocol: tcp
+                  FromPort: !Ref HTTPSPort
+                  ToPort: !Ref HTTPSPort
+                  SourceSecurityGroupId: !GetAtt NLBSG.GroupId
+                  Description: "Allow https from the NLBSG."
+                # 4443
+                - IpProtocol: tcp
+                  FromPort: 4443
+                  ToPort: 4443
+                  SourceSecurityGroupId: !GetAtt NLBSG.GroupId
+                  Description: "Allow https from the NLBSG."
+                # https
+                - IpProtocol: tcp
+                  FromPort: 4444
+                  ToPort: 4444
+                  SourceSecurityGroupId: !GetAtt NLBSG.GroupId
+                  Description: "Allow https from the NLBSG."
+                - IpProtocol: tcp
+                  FromPort: 0
+                  ToPort: 65535
+                  CidrIp: !Ref WWWCIDR
+                  Description: "Allow all from anywhere."
+
+                  
+    #####  APP SG
+    #####  allow ports 443, 4443, 4444, and 80 from ALB SG.
+    APPSG:
+        Type: AWS::EC2::SecurityGroup
+        DeletionPolicy: 'Delete'
+        Properties:
+            GroupName:  !Join ['', [!Ref AppName, !Ref Environment, "-APP-SG"]]
+            GroupDescription: "Allow ports 80, 443, 4443, and 4444 from the ALBSG."
+            VpcId: !If [CreateVAResources, !FindInMap [Environments, !Ref Environment, VPCIDVA], !FindInMap [Environments, !Ref Environment, VPCIDOH] ]
+            #VpcId: !FindInMap [Environments, !Ref Environment, VPCID]
+            Tags:
+                - Key: SupportContact
+                  Value: !Sub ${SupportContactEmail}
+                - Key: SupportGroup
+                  Value: !Sub ${SupportGroup}
+                - Key: Name
+                  Value:  !Join ['', [!Ref AppName, !Ref Environment, "-APP-SG"]]
+                - Key: srd:profile
+                  Value: !Join ['', ['cimp:', !Ref AppName]]
+                - Key: EmorySpeedType1:SpeedTypePercent1
+                  Value: !Join ['', [!Ref SPEEDTYPE, ':100']]  
+                - Key: EmoryApplicationName
+                  Value: !Ref AppName
+                - Key: EmoryApplicationNameType
+                  Value: !Ref AppName
+            #  In traffic
+            SecurityGroupIngress:
+                # http
+                - IpProtocol: tcp
+                  FromPort: !Ref HTTPPort
+                  ToPort: !Ref HTTPPort
+                  SourceSecurityGroupId: !GetAtt ALBSG.GroupId
+                  Description: "Allow http from the ALBSG."
+                # https
+                - IpProtocol: tcp
+                  FromPort: !Ref HTTPSPort
+                  ToPort: !Ref HTTPSPort
+                  SourceSecurityGroupId: !GetAtt ALBSG.GroupId
+                  Description: "Allow https from the ALBSG."
+                # 4443
+                - IpProtocol: tcp
+                  FromPort: 4443
+                  ToPort: 4443
+                  SourceSecurityGroupId: !GetAtt ALBSG.GroupId
+                  Description: "Allow https from the ALBSG."
+                # 4444
+                - IpProtocol: tcp
+                  FromPort: 4444
+                  ToPort: 4444
+                  SourceSecurityGroupId: !GetAtt ALBSG.GroupId
+                  Description: "Allow https from the ALBSG."
+
+
+    #####  Memcache SG
+    #####   allow memcache port 11211 from APPSG SG.
+    MemcacheSG:
+        Type: AWS::EC2::SecurityGroup
+        DeletionPolicy: 'Delete'
+        Properties:
+            GroupName:  !Join ['', [!Ref AppName, !Ref Environment, "-Memcache-SG"]]
+            GroupDescription: "Allow memcache port 11211 from  APPSG."
+            VpcId: !If [CreateVAResources, !FindInMap [Environments, !Ref Environment, VPCIDVA], !FindInMap [Environments, !Ref Environment, VPCIDOH] ]
+            #VpcId: !FindInMap [Environments, !Ref Environment, VPCID]
+            Tags:
+                - Key: SupportContact
+                  Value: !Sub ${SupportContactEmail}
+                - Key: SupportGroup
+                  Value: !Sub ${SupportGroup}
+                - Key: Name
+                  Value: !Join ['', [!Ref AppName, !Ref Environment, "-Memcache-SG"]]
+                - Key: srd:profile
+                  Value: !Join ['', ['cimp:', !Ref AppName]]
+                - Key: EmorySpeedType1:SpeedTypePercent1
+                  Value: !Join ['', [!Ref SPEEDTYPE, ':100']]  
+                - Key: EmoryApplicationName
+                  Value: !Ref AppName
+                - Key: EmoryApplicationNameType
+                  Value: !Ref AppName
+            SecurityGroupIngress:
+                - IpProtocol: tcp
+                  #  memcache connections from Shib APP SG
+                  FromPort: !Ref MemcachePort
+                  ToPort: !Ref MemcachePort
+                  SourceSecurityGroupId: !GetAtt APPSG.GroupId
+                  Description: "Allow memcache port 11211 from  APPSG."    
+
+
+    #####  EFS SG
+    #####  allow EFSPort (2049) from APP SG.
+    EFSSG:
+        Type: AWS::EC2::SecurityGroup
+        DeletionPolicy: 'Delete'
+        Properties:
+            GroupName:  !Join ['', [!Ref AppName, !Ref Environment, "-EFS-SG"]]
+            GroupDescription: "Allow EFS port 2049 from the APPSG."
+            VpcId: !If [CreateVAResources, !FindInMap [Environments, !Ref Environment, VPCIDVA], !FindInMap [Environments, !Ref Environment, VPCIDOH] ]
+            #VpcId: !FindInMap [Environments, !Ref Environment, VPCID]
+            Tags:
+                - Key: SupportContact
+                  Value: !Sub ${SupportContactEmail}
+                - Key: SupportGroup
+                  Value: !Sub ${SupportGroup}
+                - Key: Name
+                  Value:  !Join ['', [!Ref AppName, !Ref Environment, "-EFS-SG"]]
+                - Key: srd:profile
+                  Value: !Join ['', ['cimp:', !Ref AppName]]
+                - Key: EmorySpeedType1:SpeedTypePercent1
+                  Value: !Join ['', [!Ref SPEEDTYPE, ':100']]  
+                - Key: EmoryApplicationName
+                  Value: !Ref AppName
+                - Key: EmoryApplicationNameType
+                  Value: !Ref AppName
+            #  efs connections from APP SG
+            SecurityGroupIngress:
+                #  efs
+                - IpProtocol: tcp
+                  FromPort: !Ref EFSPort
+                  ToPort: !Ref EFSPort
+                  SourceSecurityGroupId: !GetAtt APPSG.GroupId
+                  Description: "Allow EFS port 2049 from APPSG."
+
+
+    #####  MySQL SG
+    #####   allow port 3306 from APPSG
+    MySQLSG:
+        Type: AWS::EC2::SecurityGroup
+        DeletionPolicy: 'Delete'
+        Properties:
+            GroupName:  !Join ['', [!Ref AppName, !Ref Environment, "-MySQL-SG"]]
+            GroupDescription: "Allow MySQL port 3306 from the APPSG."
+            VpcId: !If [CreateVAResources, !FindInMap [Environments, !Ref Environment, VPCIDVA], !FindInMap [Environments, !Ref Environment, VPCIDOH] ]
+            #VpcId: !FindInMap [Environments, !Ref Environment, VPCID]
+            Tags:
+                - Key: SupportContact
+                  Value: !Sub ${SupportContactEmail}
+                - Key: SupportGroup
+                  Value: !Sub ${SupportGroup}
+                - Key: Name
+                  Value:  !Join ['', [!Ref AppName, !Ref Environment, "-MySQL-SG"]]
+                - Key: srd:profile
+                  Value: !Join ['', ['cimp:', !Ref AppName]]
+                - Key: EmorySpeedType1:SpeedTypePercent1
+                  Value: !Join ['', [!Ref SPEEDTYPE, ':100']]  
+                - Key: EmoryApplicationName
+                  Value: !Ref AppName
+                - Key: EmoryApplicationNameType
+                  Value: !Ref AppName
+            SecurityGroupIngress:
+                - IpProtocol: tcp
+                  #  MySQL connections from APP SG
+                  FromPort: !Ref MySQLPort
+                  ToPort: !Ref MySQLPort
+                  SourceSecurityGroupId: !GetAtt APPSG.GroupId
+                  Description: "Allow MySQL port 3306 from the APPSG."
+
+#################################################################################################
+#################################################################################################
+Outputs:
+    NLBSG:
+        Description: Attribute Resource Name (ARN) of the   NLB Security Group.
+        Value: !Ref NLBSG
+        Export:
+            Name: !Join ['', [!Ref AppName, !Ref Environment, "-NLBSG"]]
+
+    NLBSGID:
+        Description: ID of the NLB Security Group.
+        Value: !GetAtt [NLBSG, GroupId]
+        Export:
+            Name: !Join ['', [!Ref AppName, !Ref Environment, "-NLBSGID"]]
+
+    ALBSG:
+        Description: Attribute Resource Name (ARN) of the ALB Security Group.
+        Value: !Ref ALBSG
+        Export:
+            Name: !Join ['', [!Ref AppName, !Ref Environment, "-ALBSG"]]
+
+    ALBSGID:
+        Description: ID of the ALB Security Group.
+        Value: !GetAtt [ALBSG, GroupId]
+        Export:
+            Name: !Join ['', [!Ref AppName, !Ref Environment, "-ALBSGID"]]
+
+    APPSG:
+        Description: Attribute Resource Name (ARN) of the ALB Security Group.
+        Value: !Ref APPSG
+        Export:
+            Name: !Join ['', [!Ref AppName, !Ref Environment, "-APPSG"]]
+
+    APPSGID:
+        Description: ID of the APP Security Group.
+        Value: !GetAtt [APPSG, GroupId]
+        Export:
+            Name: !Join ['', [!Ref AppName, !Ref Environment, "-APPSGID"]]
+
+    EFSSG:
+        Description: Attribute Resource Name (ARN) of the EFS Security Group.
+        Value: !Ref EFSSG
+        Export:
+            Name: !Join ['', [!Ref AppName, !Ref Environment, "-EFSSG"]]
+
+    EFSSGID:
+        Description: ID of the EFS Security Group.
+        Value: !GetAtt [EFSSG, GroupId]
+        Export:
+            Name: !Join ['', [!Ref AppName, !Ref Environment, "-EFSSGID"]]
+
+    MemcacheSG:
+        Description: MemcacheSG SG ID.
+        Value: !Ref  MemcacheSG
+        Export:
+            Name: !Join ['', [!Ref AppName, !Ref Environment, "-MemcacheSG"]]
+
+    MemcacheSGID:
+        Description: ID of the Memcache Security Group.
+        Value: !GetAtt [MemcacheSG, GroupId]
+        Export:
+            Name: !Join ['', [!Ref AppName, !Ref Environment, "-MemcacheSGID"]]
+
+    MySQLSG:
+        Description: MySQL SG ID.
+        Value: !Ref  MySQLSG
+        Export:
+            Name: !Join ['', [!Ref AppName, !Ref Environment, "-MySQLSG"]]
+
+    MySQLSGID:
+        Description: ID of the MySQL Security Group.
+        Value: !GetAtt [MySQLSG, GroupId]
+        Export:
+            Name: !Join ['', [!Ref AppName, !Ref Environment, "-MySQLSGID"]]
+
+    STDBASESG:
+        Description: STDBASE SGx Group.
+        Value: !FindInMap [Environments, !Ref Environment, STDBASESGx]
+        Export:
+            Name: !Join ['', [!Ref AppName, !Ref Environment, "-STDBASESG"]]
+
+    STDBASESGID:
+        Description: ID STDBASE SGx Group.
+        Value: !FindInMap [Environments, !Ref Environment, STDBASESGxID]
+        Export:
+            Name: !Join ['', [!Ref AppName, !Ref Environment, "-STDBASESGID"]]
+            

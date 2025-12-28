@@ -1,0 +1,615 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description:  Builds the AWS security groups for the Shibboleth IdP.
+                Using the value of the Environment parameter (DEV, QA, or PROD) will build the appropriate environment.
+  
+Parameters:
+    AppName: 
+        Description: The application name.
+        Type: String
+        Default: WebMgmtShibIdP
+        AllowedValues:
+            - WebMgmtShibIdP
+
+    Environment:
+        Description: Determines which environment and resources will be built.
+        Type: String
+        Default: DEV
+        AllowedValues:
+            - QA
+            - DEV
+            - PROD
+        ConstraintDescription: Must specify PROD, QA, or DEV.
+
+    DummyCIDR:
+        Type: String
+        Default: '192.168.5.5/24'
+        Description: Dummy CIDR.
+
+    DummyPort:
+        Type: Number
+        Default: 2051
+        Description: Dummy port.
+
+    EFSPort:
+        Type: Number
+        Default: 2049
+        Description: EFS port.
+
+    EphemeralPortStart:
+        Type: Number
+        Default: 1024
+        Description: Ephemeral port start.
+
+    EphemeralPortEnd:
+        Type: Number
+        Default: 65535
+        Description: Ephemeral port end.
+
+    HTTPCIDR:
+        Type: String
+        Default: '0.0.0.0/0'
+        Description: CIDR for HTTP access.
+
+    HTTPSCIDR:
+        Type: String
+        Default: '0.0.0.0/0'
+        Description: CIDR for HTTPS access.
+
+    HTTPPort:
+        Type: Number
+        Default: 80
+        Description: Port for HTTP access.
+
+    HTTPSPort:
+        Type: Number
+        Default: 443
+        Description: Port for HTTPS access.
+
+    MemcachePort:
+        Type: Number
+        Default: 11211
+        Description: Port for memcache access.
+
+    MySQLCIDR:
+        Type: String
+        Default: '0.0.0.0/0'
+        Description: CIDR for SSH access.
+
+    MySQLPort:
+        Type: Number
+        Default: 3306
+        Description: Port for MySQL access.
+
+    OraclePort:
+        Type: Number
+        Default: 1521
+        Description: Port for Oracle access.
+
+    Region:
+        Description: Region- Change to VA or OH.
+        Default: 'VA'
+        Type: String
+        AllowedValues:
+            - 'VA'
+            - 'OH'
+        ConstraintDescription: AWS Region - Change to VA or OH.
+
+    SSHCIDR:
+        Type: String
+        Default: '0.0.0.0/0'
+        Description: CIDR for SSH access.
+
+    SSHPort:
+        Type: Number
+        Default: 22
+        Description: Port for SSH access.
+
+    ShibbolethIdPPort:
+        Type: Number
+        Default: 80
+        Description: Port for ShibbolethIdP access.
+
+    WWWCIDR:
+        Type: String
+        Default: '0.0.0.0/0'
+        Description: access from www.
+
+    SPEEDTYPE:
+        Type: String
+        Default: "1233430000"
+        Description: Emory SpeedType.
+
+    SupportContactEmail:
+        Type: String
+        Default: 'webgroup@emory.edu'
+        Description: Support contact email.
+
+    SupportGroup:
+        Type: String
+        Default: 'Emory University WebManagement'
+        Description: Support Group for this service.
+
+#######################################################################################################
+################  Mappings and Conditions  ############################################################
+#######################################################################################################
+Conditions:
+    #  Conditionally determines which Environment (PROD, QA, DEV or TEST) to build.
+    #  true based on value of AASetEnvironment (ie, if AASetEnvironment is PROD, CreateProdResources).
+    CreateProdResources: !Equals [ !Ref Environment, PROD ]
+    CreateQaResources: !Equals [ !Ref Environment, QA ]
+    CreateDevResources: !Equals [ !Ref Environment, DEV ]
+
+    CreateVAResources: !Equals [ !Ref Region, 'VA' ]
+    CreateOHResources: !Equals [ !Ref Region, 'OH']
+
+
+Mappings:
+    ##### REM: Parameter names must be same in all 3 Environment Maps.
+    ##### REM:  Only SGx security groups exist in QA and PROD Environments.
+    ##### REM:  Both SGx and SG security groups exist in DEV.
+    ##### REM:  Only need VPCIDVA and VPCIDOH, and STDBASESGx and STDBASESGID in Mappings.
+    Environments:
+        #################################################
+        #####  PROD Environment/AWS Account
+        #################################################
+        PROD:
+            EnvironmentLower: prod
+            AppNameLower: webmgmtshibidp
+            ### VPC and CIDRS
+            VPCIDVA: vpc-0eccf0748449291d4
+            VPCIDOH: vpc-09a17d9a07f6de802
+            #VPCCIDRVA: 10.60.XX.XX/XX
+            #VPCCIDROH: 10.60.XX.XX/XX
+            ### Availability Zones
+            #AZ1VA:  us-east-1a
+            #AZ2VA:  us-east-1b
+            #AZ1OH:  us-east-2a
+            #AZ2OH:  us-east-2b
+            ### Subnets
+            ###  Public Tier
+            # VA
+            #PublicSubnet1VA: subnet-01da1f5172a51603e   ###  Public1 Tier AZ-a
+            #PublicSubnet2VA: subnet-062a7ded22c5588d4   ###  Public2 Tier AZ-b
+            # OH
+            #PublicSubnet1OH: subnet-0f4bc7435996d6ac7  ###  Public1 Tier AZ-a
+            #PublicSubnet2OH: subnet-07bed7dcff7ff814e   ###  Public2 Tier AZ-b
+            ###  Application Tier
+            # VA
+            #PrivateSubnet1VA: subnet-017ebacc55a2ea24a   ###  Application Tier AZ-a
+            #PrivateSubnet2VA: subnet-07ddd35b6982cb83a   ###  Application Tier AZ-b
+            # OH
+            #PrivateSubnet1OH: subnet-0bba318cf5f257c99   ###  Application Tier AZ-a
+            #PrivateSubnet2OH: subnet-0adc6ee500a1d6b61   ###  Application Tier AZ-b
+            ### StandardBase SG
+            #STDBASESGxVA:  STANDARD-BASE-SGx
+            #STDBASESGxIDVA:  xxxxx
+            #STDBASESGxOH:  STANDARD-BASE-SGx
+            #STDBASESGxIDOH:  xxxxx
+        #################################################
+        #####  QA Environment/AWS Account
+        #####   NOTE:  No OH for QA
+        #################################################
+        QA:
+            EnvironmentLower: qa
+            AppNameLower: webmgmtshibidp
+            ### VPC and CIDRS
+            VPCIDVA: vpc-01045ad051990cf28
+            VPCIDOH: vpc-xxxxx
+            #VPCCIDRVA: 10.60.62.192/26
+            #VPVCIDROH: xx.xx.xx.xxx/26
+            ### Availability Zones
+            #AZ1VA:  us-east-1a
+            #AZ2VA:  us-east-1b
+            #AZ1OH:  us-east-2a
+            #AZ2OH:  us-east-2b
+            ### Subnets
+            ###  Public Tier
+            # VA
+            #PublicSubnet1VA: subnet-0b7af9501f0941d94   ###  Public1 Tier AZ-a
+            #PublicSubnet2VA: subnet-074d55823c02f71e2   ###  Public2 Tier AZ-b
+            # OH
+            #PublicSubnet1OH: subnet-xxxxx  ###  Public1 Tier AZ-a
+            #PublicSubnet2OH: subnet-xxxxx   ###  Public2 Tier AZ-b
+            ###  Application Tier
+            # VA
+            #PrivateSubnet1VA: subnet-0349040a0bfcb1cdf   ###  Application Tier AZ-a
+            #PrivateSubnet2VA: subnet-0a8fd7aca662b8b39   ###  Application Tier AZ-b
+            # OH
+            #PrivateSubnet1OH: subnet-xxxxx   ###  Application Tier AZ-a
+            #PrivateSubnet2OH: subnet-xxxxx   ###  Application Tier AZ-b
+            ### StandardBase SG
+            #STDBASESGx:  STANDARD-BASE-SGx
+            #STDBASESGxID:  sg-0e91583231dc28338
+            
+        ########################################################################
+        #####  DEV Environment/AWS Account
+        ########################################################################
+        ##### Only DEV has WebMgmt managed/created non-SGx security groups
+        DEV:
+            EnvironmentLower: dev
+            AppNameLower: webmgmtshibidp
+            ### VPC and CIDRS
+            VPCIDVA: vpc-0f3d0afaf831a33ed
+            VPCIDOH: vpc-097c5443c500364ee
+            #VPCCIDRVA: 10.60.62.128/26
+            #VPCCIDROH: 10.60.149.64/26
+            ### Availability Zones
+            #AZ1VA:  us-east-1a
+            #AZ2VA:  us-east-1b
+            #AZ1OH:  us-east-2a
+            #AZ2OH:  us-east-2b
+            ###  Public Subnet  Tier
+            # VA
+            #PublicSubnet1VA: subnet-07a2df74f22130bea  ###  Public1 Tier AZ-a
+            #PublicSubnet2VA: subnet-0f9d059f502ca94ea  ###  Public2 Tier AZ-b
+            # OH
+            #PublicSubnet1OH: subnet-0c676ecdbfdd2d664  ###  Public1 Tier AZ-a
+            #PublicSubnet2OH: subnet-0ad2d21e9d1d550de  ###  Public2 Tier AZ-b
+            ###  Application Subnet Tier
+            # VA
+            #PrivateSubnet1VA: subnet-0c235b2c03e3d36fd  ###  Application Tier AZ-a
+            #PrivateSubnet2VA: subnet-0eceb52dd207798de  ###  Application Tier AZ-b
+            # OH
+            #PrivateSubnet1OH: subnet-0880ff7480555ffa8  ###  Application Tier AZ-a
+            #PrivateSubnet2OH: subnet-00a2512d92b8a8c36  ###  Application Tier AZ-b
+            ### StandardBase SG
+            #STDBASESGx:  STANDARD-BASE-SGx
+            #STDBASESGxID:  sg-03ffde9b5f0e73add
+
+    REGIONS:
+        VA:
+            Region: us-east-1
+            AZ1: us-east-1a
+            AZ2: us-east-1b
+
+        OH:
+            Region: us-east-2
+            AZ1: us-east-2a
+            AZ2: us-east-2b
+
+#################################################################################################
+########   Resources   ##########################################################################
+########    NOTE:  WebMgmt security groups only creaded in DEV.
+#################################################################################################
+Resources:
+    ##### Network Load Balancer SG
+    #####  Allow all from from www.
+    NLBSG:
+        Type: AWS::EC2::SecurityGroup
+        DeletionPolicy: 'Delete'
+        Properties:
+            GroupName: !Join ['', [!Ref AppName, !Ref Environment, "-NLB-SG"]]
+            GroupDescription: "Allow all from from www."
+            # !If [condition_name, value_if_true, value_if_false]
+            # !If [CreateVAResources, VPCIDVA, VPCIDOH ]
+            VpcId: !If [CreateVAResources, !FindInMap [Environments, !Ref Environment, VPCIDVA], !FindInMap [Environments, !Ref Environment, VPCIDOH] ]
+            Tags:
+                - Key: SupportContact
+                  Value: !Sub ${SupportContactEmail}
+                - Key: SupportGroup
+                  Value: !Sub ${SupportGroup}
+                - Key: Name
+                  Value:  !Join ['', [!Ref AppName, !Ref Environment, "-NLB-SG"]]
+                - Key: srd:profile
+                  Value: !Join ['', ['cimp:', !Ref AppName]]
+                - Key: EmorySpeedType1:SpeedTypePercent1
+                  Value: !Join ['', [!Ref SPEEDTYPE, ':100']]  
+                - Key: EmoryApplicationName
+                  Value: !Ref AppName
+                - Key: EmoryApplicationNameType
+                  Value: !Ref AppName
+            #  In traffic
+            SecurityGroupIngress:
+                #  allow all
+                - IpProtocol: tcp
+                  FromPort: 0
+                  ToPort: 65535
+                  CidrIp: !Ref WWWCIDR
+                  Description: "Allow all from www."
+
+    ##### Application Load Balancer SG
+    #####  allow ports 443, 4443, 4444, port 80 from Network Load Balancer SG.
+    ALBSG:
+        Type: AWS::EC2::SecurityGroup
+        DeletionPolicy: 'Delete'
+        Properties:
+            GroupName: !Join ['', [!Ref AppName, !Ref Environment, "-ALB-SG"]]
+            GroupDescription: "Allow ports 80, 443, 4443, and 4444 from the NLBSG."
+            VpcId: !If [CreateVAResources, !FindInMap [Environments, !Ref Environment, VPCIDVA], !FindInMap [Environments, !Ref Environment, VPCIDOH] ]
+            Tags:
+                - Key: SupportContact
+                  Value: !Sub ${SupportContactEmail}
+                - Key: SupportGroup
+                  Value: !Sub ${SupportGroup}
+                - Key: Name
+                  Value:  !Join ['', [!Ref AppName, !Ref Environment, "-ALB-SG"]]
+                - Key: srd:profile
+                  Value: !Join ['', ['cimp:', !Ref AppName]]
+                - Key: EmorySpeedType1:SpeedTypePercent1
+                  Value: !Join ['', [!Ref SPEEDTYPE, ':100']]  
+                - Key: EmoryApplicationName
+                  Value: !Ref AppName
+                - Key: EmoryApplicationNameType
+                  Value: !Ref AppName
+            #  In traffic
+            SecurityGroupIngress:
+                # http 80
+                - IpProtocol: tcp
+                  FromPort: !Ref HTTPPort
+                  ToPort: !Ref HTTPPort
+                  SourceSecurityGroupId: !GetAtt NLBSG.GroupId
+                  Description: "Allow http from the NLBSG."
+                # https 443
+                - IpProtocol: tcp
+                  FromPort: !Ref HTTPSPort
+                  ToPort: !Ref HTTPSPort
+                  SourceSecurityGroupId: !GetAtt NLBSG.GroupId
+                  Description: "Allow https from the NLBSG."
+                # 4443
+                - IpProtocol: tcp
+                  FromPort: 4443
+                  ToPort: 4443
+                  SourceSecurityGroupId: !GetAtt NLBSG.GroupId
+                  Description: "Allow https from the NLBSG."
+                # https
+                - IpProtocol: tcp
+                  FromPort: 4444
+                  ToPort: 4444
+                  SourceSecurityGroupId: !GetAtt NLBSG.GroupId
+                  Description: "Allow https from the NLBSG."
+                - IpProtocol: tcp
+                  FromPort: 0
+                  ToPort: 65535
+                  CidrIp: !Ref WWWCIDR
+                  Description: "Allow all from anywhere."
+
+                  
+    #####  APP SG
+    #####  allow ports 443, 4443, 4444, and 80 from ALB SG.
+    APPSG:
+        Type: AWS::EC2::SecurityGroup
+        DeletionPolicy: 'Delete'
+        Properties:
+            GroupName:  !Join ['', [!Ref AppName, !Ref Environment, "-APP-SG"]]
+            GroupDescription: "Allow ports 80, 443, 4443, and 4444 from the ALBSG."
+            # !If [condition_name, value_if_true, value_if_false]
+            # !If [CreateVAResources, VPCIDVA, VPCIDOH ]
+            VpcId: !If [CreateVAResources, !FindInMap [Environments, !Ref Environment, VPCIDVA], !FindInMap [Environments, !Ref Environment, VPCIDOH] ]
+            Tags:
+                - Key: SupportContact
+                  Value: !Sub ${SupportContactEmail}
+                - Key: SupportGroup
+                  Value: !Sub ${SupportGroup}
+                - Key: Name
+                  Value:  !Join ['', [!Ref AppName, !Ref Environment, "-APP-SG"]]
+                - Key: srd:profile
+                  Value: !Join ['', ['cimp:', !Ref AppName]]
+                - Key: EmorySpeedType1:SpeedTypePercent1
+                  Value: !Join ['', [!Ref SPEEDTYPE, ':100']]  
+                - Key: EmoryApplicationName
+                  Value: !Ref AppName
+                - Key: EmoryApplicationNameType
+                  Value: !Ref AppName
+            #  In traffic
+            SecurityGroupIngress:
+                # http
+                - IpProtocol: tcp
+                  FromPort: !Ref HTTPPort
+                  ToPort: !Ref HTTPPort
+                  SourceSecurityGroupId: !GetAtt ALBSG.GroupId
+                  Description: "Allow http from the ALBSG."
+                # https
+                - IpProtocol: tcp
+                  FromPort: !Ref HTTPSPort
+                  ToPort: !Ref HTTPSPort
+                  SourceSecurityGroupId: !GetAtt ALBSG.GroupId
+                  Description: "Allow https from the ALBSG."
+                # 4443
+                - IpProtocol: tcp
+                  FromPort: 4443
+                  ToPort: 4443
+                  SourceSecurityGroupId: !GetAtt ALBSG.GroupId
+                  Description: "Allow https from the ALBSG."
+                # 4444
+                - IpProtocol: tcp
+                  FromPort: 4444
+                  ToPort: 4444
+                  SourceSecurityGroupId: !GetAtt ALBSG.GroupId
+                  Description: "Allow https from the ALBSG."
+
+
+    #####  Memcache SG
+    #####   allow memcache port 11211 from APPSG SG.
+    MemcacheSG:
+        Type: AWS::EC2::SecurityGroup
+        DeletionPolicy: 'Delete'
+        Properties:
+            GroupName:  !Join ['', [!Ref AppName, !Ref Environment, "-Memcache-SG"]]
+            GroupDescription: "Allow memcache port 11211 from  APPSG."
+            # !If [condition_name, value_if_true, value_if_false]
+            # !If [CreateVAResources, VPCIDVA, VPCIDOH ]
+            VpcId: !If [CreateVAResources, !FindInMap [Environments, !Ref Environment, VPCIDVA], !FindInMap [Environments, !Ref Environment, VPCIDOH] ]
+            Tags:
+                - Key: SupportContact
+                  Value: !Sub ${SupportContactEmail}
+                - Key: SupportGroup
+                  Value: !Sub ${SupportGroup}
+                - Key: Name
+                  Value: !Join ['', [!Ref AppName, !Ref Environment, "-Memcache-SG"]]
+                - Key: srd:profile
+                  Value: !Join ['', ['cimp:', !Ref AppName]]
+                - Key: EmorySpeedType1:SpeedTypePercent1
+                  Value: !Join ['', [!Ref SPEEDTYPE, ':100']]  
+                - Key: EmoryApplicationName
+                  Value: !Ref AppName
+                - Key: EmoryApplicationNameType
+                  Value: !Ref AppName
+            SecurityGroupIngress:
+                - IpProtocol: tcp
+                  #  memcache connections from Shib APP SG
+                  FromPort: !Ref MemcachePort
+                  ToPort: !Ref MemcachePort
+                  SourceSecurityGroupId: !GetAtt APPSG.GroupId
+                  Description: "Allow memcache port 11211 from  APPSG."    
+
+
+    #####  EFS SG
+    #####  allow EFSPort (2049) from APP SG.
+    EFSSG:
+        Type: AWS::EC2::SecurityGroup
+        DeletionPolicy: 'Delete'
+        Properties:
+            GroupName:  !Join ['', [!Ref AppName, !Ref Environment, "-EFS-SG"]]
+            GroupDescription: "Allow EFS port 2049 from the APPSG."
+            # !If [condition_name, value_if_true, value_if_false]
+            # !If [CreateVAResources, VPCIDVA, VPCIDOH ]
+            VpcId: !If [CreateVAResources, !FindInMap [Environments, !Ref Environment, VPCIDVA], !FindInMap [Environments, !Ref Environment, VPCIDOH] ]
+            Tags:
+                - Key: SupportContact
+                  Value: !Sub ${SupportContactEmail}
+                - Key: SupportGroup
+                  Value: !Sub ${SupportGroup}
+                - Key: Name
+                  Value:  !Join ['', [!Ref AppName, !Ref Environment, "-EFS-SG"]]
+                - Key: srd:profile
+                  Value: !Join ['', ['cimp:', !Ref AppName]]
+                - Key: EmorySpeedType1:SpeedTypePercent1
+                  Value: !Join ['', [!Ref SPEEDTYPE, ':100']]  
+                - Key: EmoryApplicationName
+                  Value: !Ref AppName
+                - Key: EmoryApplicationNameType
+                  Value: !Ref AppName
+            #  efs connections from APP SG
+            SecurityGroupIngress:
+                #  efs
+                - IpProtocol: tcp
+                  FromPort: !Ref EFSPort
+                  ToPort: !Ref EFSPort
+                  SourceSecurityGroupId: !GetAtt APPSG.GroupId
+                  Description: "Allow EFS port 2049 from APPSG."
+
+
+    #####  MySQL SG
+    #####   allow port 3306 from APPSG
+    MySQLSG:
+        Type: AWS::EC2::SecurityGroup
+        DeletionPolicy: 'Delete'
+        Properties:
+            GroupName:  !Join ['', [!Ref AppName, !Ref Environment, "-MySQL-SG"]]
+            GroupDescription: "Allow MySQL port 3306 from the APPSG."
+            # !If [condition_name, value_if_true, value_if_false]
+            # !If [CreateVAResources, VPCIDVA, VPCIDOH ]
+            VpcId: !If [CreateVAResources, !FindInMap [Environments, !Ref Environment, VPCIDVA], !FindInMap [Environments, !Ref Environment, VPCIDOH] ]
+            Tags:
+                - Key: SupportContact
+                  Value: !Sub ${SupportContactEmail}
+                - Key: SupportGroup
+                  Value: !Sub ${SupportGroup}
+                - Key: Name
+                  Value:  !Join ['', [!Ref AppName, !Ref Environment, "-MySQL-SG"]]
+                - Key: srd:profile
+                  Value: !Join ['', ['cimp:', !Ref AppName]]
+                - Key: EmorySpeedType1:SpeedTypePercent1
+                  Value: !Join ['', [!Ref SPEEDTYPE, ':100']]  
+                - Key: EmoryApplicationName
+                  Value: !Ref AppName
+                - Key: EmoryApplicationNameType
+                  Value: !Ref AppName
+            SecurityGroupIngress:
+                - IpProtocol: tcp
+                  #  MySQL connections from APP SG
+                  FromPort: !Ref MySQLPort
+                  ToPort: !Ref MySQLPort
+                  SourceSecurityGroupId: !GetAtt APPSG.GroupId
+                  Description: "Allow MySQL port 3306 from the APPSG."
+
+#################################################################################################
+#################################################################################################
+Outputs:
+    #####################################################################
+    #####  Export the WebMgmt Team created/managed SecurityGroups 
+    #####   NOTE:  Only DEV will have the WebMgmt Team SecurityGroups
+    NLBSG:
+        Description: Attribute Resource Name (ARN) of the   NLB Security Group.
+        Value: !Ref NLBSG
+        Export:
+            Name: !Join ['', [!Ref AppName, !Ref Environment, "-NLBSG"]]
+
+    NLBSGID:
+        Description: ID of the NLB Security Group.
+        Value: !GetAtt [NLBSG, GroupId]
+        Export:
+            Name: !Join ['', [!Ref AppName, !Ref Environment, "-NLBSGID"]]
+
+    ALBSG:
+        Description: Attribute Resource Name (ARN) of the ALB Security Group.
+        Value: !Ref ALBSG
+        Export:
+            Name: !Join ['', [!Ref AppName, !Ref Environment, "-ALBSG"]]
+
+    ALBSGID:
+        Description: ID of the ALB Security Group.
+        Value: !GetAtt [ALBSG, GroupId]
+        Export:
+            Name: !Join ['', [!Ref AppName, !Ref Environment, "-ALBSGID"]]
+
+    APPSG:
+        Description: Attribute Resource Name (ARN) of the ALB Security Group.
+        Value: !Ref APPSG
+        Export:
+            Name: !Join ['', [!Ref AppName, !Ref Environment, "-APPSG"]]
+
+    APPSGID:
+        Description: ID of the APP Security Group.
+        Value: !GetAtt [APPSG, GroupId]
+        Export:
+            Name: !Join ['', [!Ref AppName, !Ref Environment, "-APPSGID"]]
+
+    EFSSG:
+        Description: Attribute Resource Name (ARN) of the EFS Security Group.
+        Value: !Ref EFSSG
+        Export:
+            Name: !Join ['', [!Ref AppName, !Ref Environment, "-EFSSG"]]
+
+    EFSSGID:
+        Description: ID of the EFS Security Group.
+        Value: !GetAtt [EFSSG, GroupId]
+        Export:
+            Name: !Join ['', [!Ref AppName, !Ref Environment, "-EFSSGID"]]
+
+    MemcacheSG:
+        Description: MemcacheSG SG ID.
+        Value: !Ref  MemcacheSG
+        Export:
+            Name: !Join ['', [!Ref AppName, !Ref Environment, "-MemcacheSG"]]
+
+    MemcacheSGID:
+        Description: ID of the Memcache Security Group.
+        Value: !GetAtt [MemcacheSG, GroupId]
+        Export:
+            Name: !Join ['', [!Ref AppName, !Ref Environment, "-MemcacheSGID"]]
+
+    MySQLSG:
+        Description: MySQL SG ID.
+        Value: !Ref  MySQLSG
+        Export:
+            Name: !Join ['', [!Ref AppName, !Ref Environment, "-MySQLSG"]]
+
+    MySQLSGID:
+        Description: ID of the MySQL Security Group.
+        Value: !GetAtt [MySQLSG, GroupId]
+        Export:
+            Name: !Join ['', [!Ref AppName, !Ref Environment, "-MySQLSGID"]]
+
+    #STDBASESG:
+        #Description: STDBASE SGx Group.
+        #Value: !FindInMap [Environments, !Ref Environment, STDBASESGx]
+        #Export:
+            #Name: !Join ['', [!Ref AppName, !Ref Environment, "-STDBASESG"]]
+
+    #STDBASESGID:
+        #Description: ID STDBASE SGx Group.
+        #Value: !FindInMap [Environments, !Ref Environment, STDBASESGxID]
+        #Export:
+            #Name: !Join ['', [!Ref AppName, !Ref Environment, "-STDBASESGID"]]

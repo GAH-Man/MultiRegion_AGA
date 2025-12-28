@@ -1,0 +1,6 @@
+See BuildInitialScratch-AMI 
+The AMI must be built and added as an input to cloudformation/shibidp-cf5-env-build-LaunchTemplatesASGs.yml
+
+See BuildInitialScratch-AMI and UpdateAMI.
+NOTE:  No OH for QA
+

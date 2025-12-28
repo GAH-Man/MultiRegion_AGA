@@ -1,0 +1,829 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description:
+  By selecting either DEV, QA, or PROD for the Environment parameter, the template will build the selected environment.
+  This template will deploy the NLB for the PROD Environment, the ALB for all three Environments, 
+  and the Target Groups for DEV, QA, and PROD IdP in the selected Environment.
+  Additionally, the ALBs and the TargetGroup names are exported.
+
+Parameters:
+    AppName: 
+        Description: The application name.
+        Type: String
+        Default: WebMgmtShibIdP
+        AllowedValues:
+            - WebMgmtShibIdP
+
+    Environment:
+        Description: Environment. Determines which environment and resources will be built.
+        Type: String
+        Default: DEV
+        AllowedValues:
+            - PROD
+            - QA
+            - DEV
+        ConstraintDescription: Must specify PROD, QA, or DEV.
+
+    CreateShibbolethIdPEnvironment:
+        Type: String
+        Default: 'yes'
+        AllowedValues:
+            - 'yes'
+            - 'no'
+        Description: Determines whether to create the Shibboleth resources.
+
+    CreateShibbolethPRODIdPEnvironment:
+        Type: String
+        Default: 'yes'
+        AllowedValues:
+            - 'yes'
+            - 'no'
+        Description: Determines whether to create the Coldfusion resources.
+
+    CreateShibbolethQAIdPEnvironment4443:
+        Type: String
+        Default: 'yes'
+        AllowedValues:
+            - 'yes'
+            - 'no'
+        Description: Determines whether to create the Coldfusion resources.
+
+    CreateShibbolethDEVIdPEnvironment4444:
+        Type: String
+        Default: 'yes'
+        AllowedValues:
+            - 'yes'
+            - 'no'
+        Description: Determines whether to create the Coldfusion resources.
+
+    InternalFacing:
+        Type: String
+        Default: 'internal'
+        Description: internal ALB.
+
+    InternetFacing:
+        Type: String
+        Default: 'internet-facing'
+        Description: internet-facing ALB.
+
+    HostingEntity:
+        Type: String
+        Default: 'Emory University'
+        Description: The Hosting Entity.
+
+    HTTPPort:
+        Type: Number
+        Default: 80
+        Description: Port for HTTP access.
+
+    HTTPSPort:
+        Type: Number
+        Default: 443
+        Description: Port for HTTPS access.
+
+    Region:
+        Description: Region- Change to VA or OH.
+        Default: 'VA'
+        Type: String
+        AllowedValues:
+            - 'VA'
+            - 'OH'
+        ConstraintDescription: AWS Region - Change to VA or OH.
+
+    ShibbolethIdPHealthCheckPath:
+        Type: String
+        Default: '/idp/shibboleth'
+        AllowedValues:
+            - '/'
+            - '/idp/shibboleth'
+        Description: Path for ShibbolethIdP health-check.
+
+    ShibbolethIdPHealthCheckHttpCode:
+        Type: String
+        Default: '200'
+        AllowedValues:
+            - '200'
+            - '302'
+        Description: ShibbolethIdP health-check HttP code.
+
+    ShibbolethIdPPort:
+        Type: Number
+        Default: 80
+        Description: Port for ShibbolethIdP access.
+    
+    SSLPolicy:
+        Type: String
+        Default: 'ELBSecurityPolicy-TLS13-1-2-2021-06'
+        AllowedValues:
+            - 'ELBSecurityPolicy-2016-08'
+            - 'ELBSecurityPolicy-TLS13-1-2-2021-06'
+            - 'ELBSecurityPolicy-TLS13-1-2-Res-2021-06'
+            - 'ELBSecurityPolicy-TLS13-1-2-Ext1-2021-06'
+            - 'ELBSecurityPolicy-TLS13-1-2-Ext2-2021-06'
+            - 'ELBSecurityPolicy-TLS13-1-1-2021-06'
+            - 'ELBSecurityPolicy-TLS13-1-0-2021-06'
+            - 'ELBSecurityPolicy-TLS13-1-3-2021-06'
+
+    SupportContactEmail:
+        Type: String
+        Default: 'webgroup@emory.edu'
+        Description: Support contact email.
+
+    SupportGroup:
+        Type: String
+        Default: 'Emory University WebManagement'
+        Description: Support Group for this service.
+
+    PublicHealthCheckPath:
+        Type: String
+        Default: '/idp/shibboleth'
+        AllowedValues:
+            - '/'
+            - '/idp/shibboleth'
+        Description: Path for ShibbolethIdP health-check.
+
+    PublicTGHealthCheckInterval:
+        Type: Number
+        Default: 10
+        Description: The approximate amount of time, in seconds, between health checks of an individual target.
+
+    PublicTGHealthCheckTimeout:
+        Type: Number
+        Default: 5
+        Description: The amount of time, in seconds, during which no response means a failed health check.
+
+    PublicTGHealthyThresholdCount:
+        Type: Number
+        Default: 3
+        Description: The number of consecutive health checks successes required before considering an unhealthy target healthy.
+
+    PublicTGUnhealthyThresholdCount:
+        Type: Number
+        Default: 3
+        Description: The number of consecutive health check failures required before moving the instance to the Unhealthy state.
+
+    ShibbolethIdPTGHealthCheckInterval:
+        Type: Number
+        Default: 10
+        Description: The approximate amount of time, in seconds, between health checks of an individual target.
+
+    ShibbolethIdPTGHealthCheckTimeout:
+        Type: Number
+        Default: 5
+        Description: The amount of time, in seconds, during which no response means a failed health check.
+
+    ShibbolethIdPTGHealthyThresholdCount:
+        Type: Number
+        Default: 3
+        Description: The number of consecutive health checks successes required before considering an unhealthy target healthy.
+
+    ShibbolethIdPTGUnhealthyThresholdCount:
+        Type: Number
+        Default: 3
+        Description: The number of consecutive health check failures required before moving the instance to the Unhealthy state.
+
+    SPEEDTYPE:
+        Type: String
+        Default: "1233430000"
+        Description: Emory SpeedType - should be set by Jenkins
+##############################################################################################################
+################  Mappings and Conditions  ###################################################################
+##############################################################################################################
+Conditions:
+    #  Conditionally determines which Environment (PROD, QA, DEV, TEST) to build based on Environment parameter.
+    CreateProdResources: !Equals [ !Ref Environment, PROD ]
+    CreateQaResources: !Equals [ !Ref Environment, QA ]
+    CreateDevResources: !Equals [ !Ref Environment, DEV ]
+    CreateShibbolethIdPResources: !Equals [ !Ref CreateShibbolethIdPEnvironment, 'yes']
+
+    CreateShibbolethPRODIdPResources: !Equals [ !Ref CreateShibbolethPRODIdPEnvironment, 'yes' ]
+    CreateShibbolethQAIdPResources4443: !Equals [ !Ref CreateShibbolethQAIdPEnvironment4443, 'yes' ]
+    CreateShibbolethDEVIdPResources4444: !Equals [ !Ref CreateShibbolethDEVIdPEnvironment4444, 'yes' ]
+
+    # Only create NLB resources for PROD Environment.
+    CreateNLBResources: !And 
+        - !Equals 
+          - !Ref Environment
+          - 'PROD'
+        - !Equals 
+          - !Ref CreateShibbolethPRODIdPEnvironment
+          - 'yes'
+
+    CreateVAResources: !Equals [ !Ref Region, 'VA' ]
+    CreateOHResources: !Equals [ !Ref Region, 'OH']
+    
+                          
+Mappings:
+    ##### REM: Parameter names must be same in all 3 Environment Maps.
+    ##### REM:  Only SGx security groups in QA and PROD Environments.
+    Environments:
+        #################################################
+        #####  PROD Environment/AWS Account
+        #################################################
+        PROD:
+            VPCIDVA: vpc-xxxxx
+            VPCIDOH: vpc-xxxxx
+            ### Certs
+            LoginEmoryEduCertArnVA: xxxxxx
+            LoginEmoryEduCertArnOH: xxxxx
+        #################################################
+        #####  QA Environment/AWS Account
+        #################################################
+        QA:
+            VPCIDVA: vpc-01045ad051990cf28
+            VPCIDOH: vpc-xxxxx
+            ### Certs
+            LoginEmoryEduCertArnVA: arn:aws:acm:us-east-1:177227696563:certificate/530188d3-9bdc-402e-8e98-b423a21d5593
+            LoginEmoryEduCertArnOH: xxxxx
+
+        #################################################
+        #####  DEV Environment/AWS Account
+        #################################################
+        DEV:
+            VPCIDVA: vpc-0f3d0afaf831a33ed
+            VPCIDOH: vpc-097c5443c500364ee
+            ### Certs
+            # VA
+            EmoryWildCardCertArnVA: arn:aws:acm:us-east-1:637667300994:certificate/a8a395a7-2bba-4eb4-84c6-388a84d20d24
+            LoginEmoryEduCertArnVA: arn:aws:acm:us-east-1:637667300994:certificate/8e111428-14fb-4939-9d0a-71484a658b77
+            # OH
+            EmoryWildCardCertArnOH: xxxxx
+            LoginEmoryEduCertArnOH: arn:aws:acm:us-east-2:637667300994:certificate/f3bd83a0-a859-4dfa-ba66-267f5e3c5676
+
+#######################################################################################################
+##### NOTE: 
+#####   From Mappings need the Public Subnets, VPCID, and Cert.
+#####
+#####   From Imports ALBSG, NLBSG, and STDBASESG.
+##############################################################################################
+##################  RESOURCES      ###########################################################
+##############################################################################################
+Resources:
+### The order of resouce creation DOES MATTER!!!!  See the DependsOn settings.
+    #####################################################################################
+    ##### Create the Network LoadBalancer 
+    ShibbolethIdPNLB:
+        Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+        DependsOn: ShibbolethIdPALB
+        ## Create ONLY for the PROD Environment
+        Condition:  CreateNLBResources
+        DeletionPolicy: 'Delete'
+        Properties:
+            Name: !Join ['', [!Ref AppName, !Ref Environment, "-NLB"]]
+            Subnets:
+                - Fn::ImportValue: !Join ['', [!Ref AppName, !Ref Environment,"-PublicSubnet1"]]   
+                - Fn::ImportValue: !Join ['', [!Ref AppName, !Ref Environment,"-PublicSubnet2"]]   
+            Scheme: !Ref InternetFacing
+            SecurityGroups:
+                -  Fn::ImportValue: !Join ['', [!Ref AppName, !Ref Environment, "-STDBASESGxID"]]              
+            LoadBalancerAttributes:
+                - Key: load_balancing.cross_zone.enabled
+                  Value: true
+            Type: network
+            Tags:
+                - Key: Name
+                  Value: !Join ['', [!Ref AppName, !Ref Environment, "-NLB"]]
+                - Key: SupportContactEmail
+                  Value: !Ref SupportContactEmail
+                - Key: SupportGroup
+                  Value: !Ref SupportGroup
+                - Key: srd:profile
+                  Value: !Join ['', ['cimp:', !Ref AppName]]
+                - Key: EmorySpeedType1:SpeedTypePercent1
+                  Value: !Join ['', [!Ref SPEEDTYPE, ':100']]  
+                - Key: EmoryApplicationName
+                  Value: !Ref AppName
+                - Key: EmoryApplicationNameType
+                  Value: !Ref AppName
+
+    NLBListener443:
+       Type: 'AWS::ElasticLoadBalancingV2::Listener'
+       DependsOn: ShibbolethIdPNLB
+       ## Create ONLY for the PROD Environment
+       Condition:  CreateNLBResources
+       DeletionPolicy: 'Delete'
+       Properties:
+           DefaultActions:
+               - Type: "forward"
+                 ForwardConfig:
+                     TargetGroups:
+                         - TargetGroupArn: !Ref NLBTG443
+           LoadBalancerArn: !Ref ShibbolethIdPNLB
+           Port: 443
+           Protocol: "TCP"
+
+    #  Depends on the NLB 443 (HTTPS) listener
+    #  Target is the ALB
+    NLBTG443:
+        Type: AWS::ElasticLoadBalancingV2::TargetGroup
+        DependsOn: ShibbolethPRODIdPALBHttpsListener
+        DeletionPolicy: 'Delete'
+        ## Create ONLY for the PROD Environment
+        Condition:  CreateNLBResources
+        Properties:
+          HealthCheckPort: 443
+          HealthCheckProtocol: HTTPS
+          HealthCheckPath: !Ref ShibbolethIdPHealthCheckPath
+          Name: !Join ['', [!Ref AppName, !Ref Environment, "-NLBTG443"]]
+          #  Same port as Listener
+          Port: 443
+          Protocol: TCP
+          Tags:
+              - Key: Name
+                Value:  !Join ['', [!Ref AppName, !Ref Environment, "-NLBTG443"]]
+              - Key: SupportContactEmail
+                Value: !Ref SupportContactEmail
+              - Key: SupportGroup
+                Value: !Ref SupportGroup
+              - Key: srd:profile
+                Value: !Join ['', ['cimp:', !Ref AppName]]
+              - Key: EmorySpeedType1:SpeedTypePercent1
+                Value: !Join ['', [!Ref SPEEDTYPE, ':100']]  
+              - Key: EmoryApplicationName
+                Value: !Ref AppName
+              - Key: EmoryApplicationNameType
+                Value: !Ref AppName
+          Targets:
+              - Id: !Ref ShibbolethIdPALB
+          TargetType: alb
+          VpcId: !If [CreateVAResources, !FindInMap [Environments, !Ref Environment, VPCIDVA ], !FindInMap [Environments, !Ref Environment, VPCIDOH ] ]
+
+    NLBListener80:
+       Type: 'AWS::ElasticLoadBalancingV2::Listener'
+       DependsOn: ShibbolethIdPNLB
+       ## Create ONLY for the PROD Environment
+       Condition:  CreateNLBResources
+       Properties:
+           DefaultActions:
+               - Type: "forward"
+                 ForwardConfig:
+                     TargetGroups:
+                         - TargetGroupArn: !Ref NLBTG80
+           LoadBalancerArn: !Ref ShibbolethIdPNLB
+           Port: 80
+           Protocol: "TCP"
+
+    #  Depends on the NLB 80 (HTTP) listener
+    #  Target is the ALB
+    NLBTG80:
+        Type: AWS::ElasticLoadBalancingV2::TargetGroup
+        DependsOn: ShibbolethPRODIdPALBHttpListener
+        ## Create ONLY for the PROD Environment
+        Condition:  CreateNLBResources
+        Properties:
+          HealthCheckPort: 80
+          HealthCheckProtocol: HTTP
+          HealthCheckPath: !Ref ShibbolethIdPHealthCheckPath
+          Name: !Join ['', [!Ref AppName, !Ref Environment, "-NLBTG80"]]
+          #  Same port as Listener
+          Port: 80
+          Protocol: TCP
+          Tags:
+              - Key: Name
+                Value:  !Join ['', [!Ref AppName, !Ref Environment, "-NLBTG80"]]
+              - Key: SupportContactEmail
+                Value: !Ref SupportContactEmail
+              - Key: SupportGroup
+                Value: !Ref SupportGroup
+              - Key: srd:profile
+                Value: !Join ['', ['cimp:', !Ref AppName]]
+              - Key: EmorySpeedType1:SpeedTypePercent1
+                Value: !Join ['', [!Ref SPEEDTYPE, ':100']] 
+              - Key: EmoryApplicationName
+                Value: !Ref AppName
+              - Key: EmoryApplicationNameType
+                Value: !Ref AppName
+          Targets:
+              - Id: !Ref ShibbolethIdPALB
+          TargetType: alb
+          VpcId: !If [CreateVAResources, !FindInMap [Environments, !Ref Environment, VPCIDVA ], !FindInMap [Environments, !Ref Environment, VPCIDOH ] ]
+
+
+    NLBListener4443:
+       Type: 'AWS::ElasticLoadBalancingV2::Listener'
+       DependsOn: ShibbolethIdPNLB
+       DeletionPolicy: 'Delete'
+       ## Create ONLY for the PROD Environment
+       Condition:  CreateNLBResources
+       Properties:
+           DefaultActions:
+               - Type: "forward"
+                 ForwardConfig:
+                     TargetGroups:
+                         - TargetGroupArn: !Ref NLBTG4443
+           LoadBalancerArn: !Ref ShibbolethIdPNLB
+           Port: 4443
+           Protocol: "TCP"
+
+    #  Depends on the NLB 4443 listener
+    #  Target is the ALB
+    NLBTG4443:
+        Type: AWS::ElasticLoadBalancingV2::TargetGroup
+        DependsOn: ShibbolethQAIdPALBListener4443
+        DeletionPolicy: 'Delete'
+        ## Create ONLY for the PROD Environment
+        Condition:  CreateNLBResources
+        Properties:
+          HealthCheckPort: 4443
+          HealthCheckProtocol: HTTPS
+          HealthCheckPath: !Ref ShibbolethIdPHealthCheckPath
+          Name: !Join ['', [!Ref AppName, !Ref Environment, "-NLBTG4443"]]
+          #  Same port as Listener
+          Port: 4443
+          Protocol: TCP
+          Tags:
+              - Key: Name
+                Value:  !Join ['', [!Ref AppName, !Ref Environment, "-NLBTG4443"]]
+              - Key: SupportContactEmail
+                Value: !Ref SupportContactEmail
+              - Key: SupportGroup
+                Value: !Ref SupportGroup
+              - Key: srd:profile
+                Value: !Join ['', ['cimp:', !Ref AppName]]
+              - Key: EmorySpeedType1:SpeedTypePercent1
+                Value: !Join ['', [!Ref SPEEDTYPE, ':100']] 
+              - Key: EmoryApplicationName
+                Value: !Ref AppName
+              - Key: EmoryApplicationNameType
+                Value: !Ref AppName
+          Targets:
+              - Id: !Ref ShibbolethIdPALB
+          TargetType: alb
+          VpcId: !If [CreateVAResources, !FindInMap [Environments, !Ref Environment, VPCIDVA ], !FindInMap [Environments, !Ref Environment, VPCIDOH ] ]
+
+
+    NLBListener4444:
+       Type: 'AWS::ElasticLoadBalancingV2::Listener'
+       DependsOn: ShibbolethIdPNLB
+       DeletionPolicy: 'Delete'
+       ## Create ONLY for the PROD Environment
+       Condition:  CreateNLBResources
+       Properties:
+           DefaultActions:
+               - Type: "forward"
+                 ForwardConfig:
+                     TargetGroups:
+                         - TargetGroupArn: !Ref NLBTG4444
+           LoadBalancerArn: !Ref ShibbolethIdPNLB
+           Port: 4444
+           Protocol: "TCP"
+
+    #  Depends on the NLB 4444 listener
+    #  Target is the ALB
+    NLBTG4444:
+        Type: AWS::ElasticLoadBalancingV2::TargetGroup
+        DependsOn: ShibbolethDEVIdPALBListener4444
+        DeletionPolicy: 'Delete'
+        ## Create ONLY for the PROD Environment
+        Condition:  CreateNLBResources
+        Properties:
+          #  Same port as Listener
+          HealthCheckPort: 4444
+          HealthCheckProtocol: HTTPS
+          HealthCheckPath: !Ref ShibbolethIdPHealthCheckPath
+          Name: !Join ['', [!Ref AppName, !Ref Environment, "-NLBTG4444"]]
+          Port: 4444
+          Protocol: TCP
+          Tags:
+              - Key: Name
+                Value:  !Join ['', [!Ref AppName, !Ref Environment, "-NLBTG4444"]]
+              - Key: SupportContactEmail
+                Value: !Ref SupportContactEmail
+              - Key: SupportGroup
+                Value: !Ref SupportGroup
+              - Key: Application
+                Value: !Ref AppName
+              - Key: srd:profile
+                Value: !Join ['', ['cimp:', !Ref AppName]]
+              - Key: EmorySpeedType1:SpeedTypePercent1
+                Value: !Join ['', [!Ref SPEEDTYPE, ':100']] 
+              - Key: EmoryApplicationName
+                Value: !Ref AppName
+              - Key: EmoryApplicationNameType
+                Value: !Ref AppName
+          Targets:
+              - Id: !Ref ShibbolethIdPALB
+          TargetType: alb
+          VpcId: !If [CreateVAResources, !FindInMap [Environments, !Ref Environment, VPCIDVA ], !FindInMap [Environments, !Ref Environment, VPCIDOH ] ]
+
+
+    ######################################################################################
+    ##### Create the Application LoadBalancer
+    ShibbolethIdPALB:
+        Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+        DeletionPolicy: 'Delete'
+        Properties:
+            Name: !Join ['', [!Ref AppName, !Ref Environment, "-ALB"]]
+            SecurityGroups:
+                -  Fn::ImportValue: !Join ['', [!Ref AppName, !Ref Environment, "-ALBSGxID"]]
+                #-  Fn::ImportValue: !Join ['', [!Ref AppName, !Ref Environment, "-NLBSGxID"]]
+                - Fn::ImportValue: !Join ['', [!Ref AppName, !Ref Environment,"-STDBASESGxID"]]                 
+            Subnets: 
+                - Fn::ImportValue: !Join ['', [!Ref AppName, !Ref Environment,"-PrivateSubnet1"]]   
+                - Fn::ImportValue: !Join ['', [!Ref AppName, !Ref Environment,"-PrivateSubnet2"]]      
+            #####  Scheme InternalFacing #####
+            Scheme: !Ref InternalFacing
+            Tags:
+                - Key: Name
+                  Value: !Join ['', [!Ref AppName, !Ref Environment, "-ALB"]]
+                - Key: SupportContactEmail
+                  Value: !Ref SupportContactEmail
+                - Key: SupportGroup
+                  Value: !Ref SupportGroup
+                - Key: Application
+                  Value: !Ref AppName
+                - Key: srd:profile
+                  Value: !Join ['', ['cimp:', !Ref AppName]]
+                - Key: EmorySpeedType1:SpeedTypePercent1
+                  Value: !Join ['', [!Ref SPEEDTYPE, ':100']] 
+                - Key: EmoryApplicationName
+                  Value: !Ref AppName
+                - Key: EmoryApplicationNameType
+                  Value: !Ref AppName
+
+    ######################################################################################
+    #####  PROD IdP Listener and Target Group 
+    #  Application LoadBalancer 443 HTTPS Listeners
+    ShibbolethPRODIdPALBHttpsListener:
+        Type: AWS::ElasticLoadBalancingV2::Listener
+        DeletionPolicy: 'Delete'
+        DependsOn: ShibbolethIdPALB  
+        Condition: CreateShibbolethPRODIdPResources
+        Properties:
+            LoadBalancerArn:  !Ref ShibbolethIdPALB    
+            Port: 443
+            Protocol: HTTPS
+            SslPolicy:  !Ref SSLPolicy
+            Certificates:
+                - CertificateArn: !If [CreateVAResources, !FindInMap [Environments, !Ref Environment,LoginEmoryEduCertArnVA ], !FindInMap [Environments, !Ref Environment, LoginEmoryEduCertArnOH ] ]
+            DefaultActions:
+                - Type: forward
+                  TargetGroupArn: !Ref ShibbolethPRODIdPTG
+
+    # ALB HTTP Listener
+    #  Redirects traffic to ALB 443
+    ShibbolethPRODIdPALBHttpListener:
+        Type: AWS::ElasticLoadBalancingV2::Listener
+        DeletionPolicy: 'Delete'
+        DependsOn: ShibbolethIdPALB  
+        Condition: CreateShibbolethPRODIdPResources
+        Properties:
+            LoadBalancerArn:  !Ref ShibbolethIdPALB  
+            Port: '80'
+            Protocol: HTTP
+            DefaultActions:
+            - Type: 'redirect'
+              RedirectConfig:
+                  Protocol: "HTTPS"
+                  Port: "443"
+                  Host: "#{host}"
+                  Path: "/#{path}"
+                  Query: "#{query}"
+                  StatusCode: "HTTP_301"
+
+    # Create the ShibbolethIdP TargetGroup
+    ShibbolethPRODIdPTG:
+        Type: AWS::ElasticLoadBalancingV2::TargetGroup
+        DeletionPolicy: 'Delete'
+        Condition: CreateShibbolethPRODIdPResources
+        Properties:
+            Name:  !Join ['', [!Ref AppName, !Ref Environment, "-PRODIdP-TG"]]
+            HealthCheckIntervalSeconds: !Ref ShibbolethIdPTGHealthCheckInterval
+            HealthCheckPath: !Ref ShibbolethIdPHealthCheckPath
+            HealthCheckTimeoutSeconds: !Ref ShibbolethIdPTGHealthCheckTimeout
+            HealthyThresholdCount: !Ref ShibbolethIdPTGHealthyThresholdCount
+            UnhealthyThresholdCount: !Ref ShibbolethIdPTGUnhealthyThresholdCount
+            Matcher:
+                HttpCode:  !Ref ShibbolethIdPHealthCheckHttpCode
+            Protocol: HTTPS
+            Port: !Ref HTTPSPort
+            #VpcId:  !FindInMap [Environments, !Ref Environment, VPCID]
+            VpcId: !If [CreateVAResources, !FindInMap [Environments, !Ref Environment, VPCIDVA ], !FindInMap [Environments, !Ref Environment, VPCIDOH ] ]
+            TargetType: instance
+            TargetGroupAttributes:
+                - Key: stickiness.enabled
+                  Value: true
+                #####  Must be lb_cookie for IdP
+                - Key: stickiness.type
+                  Value: lb_cookie
+                  #Value:  app_cookie
+                #- Key: stickiness.app_cookie.cookie_name
+                  #Value: !Join ['', [!Ref AppName, !Ref Environment, "-PRODIdP-Cookie"]]
+            Tags:
+                - Key: Name
+                  Value:  !Join ['', [!Ref AppName, !Ref Environment, "-PRODIdP-TG"]]
+                - Key: Purpose
+                  Value: 'TargetGroup for the PROD IdP'
+                - Key: SupportContactEmail
+                  Value: !Ref SupportContactEmail
+                - Key: SupportGroup
+                  Value: !Ref SupportGroup
+                - Key: Application
+                  Value: !Ref AppName
+                - Key: srd:profile
+                  Value: !Join ['', ['cimp:', !Ref AppName]]
+                - Key: EmorySpeedType1:SpeedTypePercent1
+                  Value: !Join ['', [!Ref SPEEDTYPE, ':100']] 
+                - Key: EmoryApplicationName
+                  Value: !Ref AppName
+                - Key: EmoryApplicationNameType
+                  Value: !Ref AppName
+
+
+    ######################################################################################
+    #####  QA IdP Listener and Target Group 
+    #  Application LoadBalancer 4443 HTTPS Listeners
+    ShibbolethQAIdPALBListener4443:
+        Type: AWS::ElasticLoadBalancingV2::Listener
+        DeletionPolicy: 'Delete'
+        DependsOn: ShibbolethIdPALB  
+        Condition: CreateShibbolethQAIdPResources4443
+        Properties:
+            LoadBalancerArn:  !Ref ShibbolethIdPALB    
+            Port: 4443
+            Protocol: HTTPS
+            SslPolicy:  !Ref SSLPolicy
+            Certificates:
+                - CertificateArn: !If [CreateVAResources, !FindInMap [Environments, !Ref Environment,  LoginEmoryEduCertArnVA ], !FindInMap [Environments, !Ref Environment,  LoginEmoryEduCertArnOH ] ]
+            DefaultActions:
+                - Type: forward
+                  TargetGroupArn: !Ref ShibbolethQAIdPTG4443
+
+    # Create the ShibbolethIdP 4443 TargetGroup
+    ShibbolethQAIdPTG4443:
+        Type: AWS::ElasticLoadBalancingV2::TargetGroup
+        DeletionPolicy: 'Delete'
+        Condition: CreateShibbolethQAIdPResources4443
+        Properties:
+            Name:  !Join ['', [!Ref AppName, !Ref Environment, "-QAIdP-TG4443"]]
+            HealthCheckIntervalSeconds: !Ref ShibbolethIdPTGHealthCheckInterval
+            HealthCheckPath: !Ref ShibbolethIdPHealthCheckPath
+            HealthCheckTimeoutSeconds: !Ref ShibbolethIdPTGHealthCheckTimeout
+            HealthyThresholdCount: !Ref ShibbolethIdPTGHealthyThresholdCount
+            UnhealthyThresholdCount: !Ref ShibbolethIdPTGUnhealthyThresholdCount
+            Matcher:
+                HttpCode:  !Ref ShibbolethIdPHealthCheckHttpCode
+            Protocol: HTTPS
+            #####  Listener is for port 4443 but port for QA IdP Apache is still https/443
+            Port: 443
+            VpcId: !If [CreateVAResources, !FindInMap [Environments, !Ref Environment, VPCIDVA ], !FindInMap [Environments, !Ref Environment, VPCIDOH ] ]
+            TargetType: instance
+            TargetGroupAttributes:
+                - Key: stickiness.enabled
+                  Value: true
+                #####  Must be lb_cookie for IdP
+                - Key: stickiness.type
+                  Value: lb_cookie
+                  #Value:  app_cookie
+                #- Key: stickiness.app_cookie.cookie_name
+                  #Value: !Join ['', [!Ref AppName, !Ref Environment, "-QAIdP-Cookie"]]
+            Tags:
+                - Key: Name
+                  Value:  !Join ['', [!Ref AppName, !Ref Environment, "-QAIdP-TG4443"]]
+                - Key: Purpose
+                  Value: 'TargetGroup for the QA IdP'
+                - Key: SupportContactEmail
+                  Value: !Ref SupportContactEmail
+                - Key: SupportGroup
+                  Value: !Ref SupportGroup
+                - Key: Application
+                  Value: !Ref AppName
+                - Key: srd:profile
+                  Value: !Join ['', ['cimp:', !Ref AppName]]
+                - Key: EmorySpeedType1:SpeedTypePercent1
+                  Value: !Join ['', [!Ref SPEEDTYPE, ':100']] 
+                - Key: EmoryApplicationName
+                  Value: !Ref AppName
+                - Key: EmoryApplicationNameType
+                  Value: !Ref AppName
+
+
+    ######################################################################################
+    ##### DEV IdP Listener and Target Group 
+    #  ALB 4444 HTTPS Listeners
+    ShibbolethDEVIdPALBListener4444:
+        Type: AWS::ElasticLoadBalancingV2::Listener
+        DeletionPolicy: 'Delete'
+        DependsOn: ShibbolethIdPALB  
+        Condition: CreateShibbolethDEVIdPResources4444
+        Properties:
+            LoadBalancerArn:  !Ref ShibbolethIdPALB    
+            Port: 4444
+            Protocol: HTTPS
+            SslPolicy:  !Ref SSLPolicy
+            Certificates:
+                - CertificateArn: !If [CreateVAResources, !FindInMap [Environments, !Ref Environment,  LoginEmoryEduCertArnVA ], !FindInMap [Environments, !Ref Environment,  LoginEmoryEduCertArnOH ] ] 
+            DefaultActions:
+                - Type: forward
+                  TargetGroupArn: !Ref ShibbolethDEVIdPTG4444
+
+    # Create the ShibbolethIdP 4444 TargetGroup
+    ShibbolethDEVIdPTG4444:
+        Type: AWS::ElasticLoadBalancingV2::TargetGroup
+        DeletionPolicy: 'Delete'
+        Condition: CreateShibbolethDEVIdPResources4444
+        Properties:
+            Name:  !Join ['', [!Ref AppName, !Ref Environment, "-DEVIdP-TG4444"]]
+            HealthCheckIntervalSeconds: !Ref ShibbolethIdPTGHealthCheckInterval
+            HealthCheckPath: !Ref ShibbolethIdPHealthCheckPath
+            HealthCheckTimeoutSeconds: !Ref ShibbolethIdPTGHealthCheckTimeout
+            HealthyThresholdCount: !Ref ShibbolethIdPTGHealthyThresholdCount
+            UnhealthyThresholdCount: !Ref ShibbolethIdPTGUnhealthyThresholdCount
+            Matcher:
+                HttpCode:  !Ref ShibbolethIdPHealthCheckHttpCode
+            Protocol: HTTPS
+            #####  Listener is for port 4444 but port for DEV IdP Apache is still https/443
+            Port: 443
+            VpcId: !If [CreateVAResources, !FindInMap [Environments, !Ref Environment, VPCIDVA ], !FindInMap [Environments, !Ref Environment, VPCIDOH ] ]
+            TargetType: instance
+            TargetGroupAttributes:
+                - Key: stickiness.enabled
+                  Value: true
+                 #####  Must be lb_cookie for IdP
+                - Key: stickiness.type
+                  Value: lb_cookie
+                  #Value:  app_cookie
+                #- Key: stickiness.app_cookie.cookie_name
+                  #Value: !Join ['', [!Ref AppName, !Ref Environment, "-DEVIdP-Cookie"]]
+            Tags:
+                - Key: Name
+                  Value:  !Join ['', [!Ref AppName, !Ref Environment, "-DEVIdP-TG4444"]]
+                - Key: Purpose
+                  Value: 'TargetGroup for the DEV IdP'
+                - Key: SupportContactEmail
+                  Value: !Ref SupportContactEmail
+                - Key: SupportGroup
+                  Value: !Ref SupportGroup
+                - Key: Application
+                  Value: !Ref AppName
+                - Key: srd:profile
+                  Value: !Join ['', ['cimp:', !Ref AppName]]
+                - Key: EmorySpeedType1:SpeedTypePercent1
+                  Value: !Join ['', [!Ref SPEEDTYPE, ':100']] 
+                - Key: EmoryApplicationName
+                  Value: !Ref AppName
+                - Key: EmoryApplicationNameType
+                  Value: !Ref AppName
+
+########################################################################################################################
+################  OUTPUTS  and EXPORTS    ##############################################################################
+########################################################################################################################
+Outputs:
+    ShibbolethIdPNLB:
+        ## Create ONLY for the PROD Environment
+        Condition:  CreateNLBResources
+        Description: The Public NLB.
+        Value: !Ref  ShibbolethIdPNLB
+        Export:
+            Name:  !Join ['', [!Ref AppName, !Ref Environment, "-NLB"]]
+
+    ShibbolethIdPALB:
+        Description: The ShibbolethIdP ALB.
+        Value: !Ref  ShibbolethIdPALB
+        Export:
+            Name:  !Join ['', [!Ref AppName, !Ref Environment, "-ALB"]]
+            
+
+    ShibbolethPRODIdPTG:
+        Condition: CreateShibbolethPRODIdPResources
+        Description: The Shibboleth PROD IdP TargetGroup.
+        Value: !Ref  ShibbolethPRODIdPTG
+        Export:
+            Name:  !Join ['', [!Ref AppName, !Ref Environment, "-PRODIdP-TG"]]
+
+    ShibbolethProdIdPEC2InstanceProfile:
+        Condition: CreateShibbolethPRODIdPResources
+        Description: The Shibboleth PROD IdP EC2InstanceProfile.
+        Value: WebMgmtShibIdP-Prod-EC2Role
+        Export:
+            Name:  !Join ['', [!Ref AppName, !Ref Environment, "-PRODIdP-EC2InstanceProfile"]]
+
+
+    ShibbolethQAIdPTG4443:
+        Condition: CreateShibbolethQAIdPResources4443
+        Description: The Shibboleth QA IdP TargetGroup.
+        Value: !Ref  ShibbolethQAIdPTG4443
+        Export:
+            Name:  !Join ['', [!Ref AppName, !Ref Environment, "-QAIdP-TG4443"]]
+
+    ShibbolethQaIdPEC2InstanceProfile:
+        Condition: CreateShibbolethQAIdPResources4443
+        Description: The Shibboleth QA IdP EC2InstanceProfile.
+        Value: WebMgmtShibIdP-Qa-EC2Role
+        Export:
+            Name:  !Join ['', [!Ref AppName, !Ref Environment, "-QAIdP-EC2InstanceProfile4443"]]
+
+
+    ShibbolethDEVIdPTG4444:
+        Condition: CreateShibbolethDEVIdPResources4444
+        Description: The Shibboleth DEV IdP TargetGroup.
+        Value: !Ref  ShibbolethDEVIdPTG4444
+        Export:
+            Name:  !Join ['', [!Ref AppName, !Ref Environment, "-DEVIdP-TG4444"]]
+
+    ShibbolethDevIdPEC2InstanceProfile:
+        Condition: CreateShibbolethDEVIdPResources4444
+        Description: The Shibboleth DEV IdP EC2InstanceProfile
+        Value: WebMgmtShibIdP-Qa-EC2Role
+        Export:
+            Name:  !Join ['', [!Ref AppName, !Ref Environment, "-DEVIdP-EC2InstanceProfile4444"]]
