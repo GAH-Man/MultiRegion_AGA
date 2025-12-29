@@ -1,0 +1,39 @@
+NOTE:
+Both the initial scratch build and the update cloudformation template use the same cloudformation templates
+        with different Jenkins jobs.
+
+
+I.  Build order DOES matter!!!!
+You must build the 
+1.  shibidp-cf1-SecurityGroups.yml
+        - only valid/available for DEV Environment.
+        - exports the WH Security Groups.
+2.  shibidp-cf2-env-build-core-elements-MemcacheS3EFS.yml
+        - exports the SecTeam SGx Security Groups.
+3.  shibidp-cf3-env-build-LBSListenersTargetGroups.yml
+        - NLB is only built for the PROD Environment.
+4.  shibidp-cf4  (Read!!!)
+        - just a placeholder, see BuildInitialScratch-AMI.
+        - AMI created prior to LaunchTemplates and AutoScaling Groups (ASG).
+5.  shibidp-cf5-env-build-LaunchTemplatesASGs.yml
+        - uses AMI from step #4.
+
+
+II. shibidp_* templates
+1.  single region templates.
+
+
+III.  The AGA_Cloudformation Templates (Amazon Global Accelerator)
+1.  These templates are used to build the multi-region enviroment for VA and OH.
+2.  Originally created for John Connerat and Paul Peterson to test the AWS Global Accerlator.
+3.  The templates are based on the non-multi-region templates but are different.
+4.  The templates have their own AGA_jenkins jobs.
+
+
+IV.  The MultiRegion Templates.
+1.  Currently not used.
+2.  Copies of the AGA-cloudformation templates but w/ a more descriptive name.
+
+
+V. Update Stack Templates
+1.  Use the same CloudFormation templates as the initial build templates, but w/ update-stack.
